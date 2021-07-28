@@ -128,6 +128,37 @@ write_visium_data = function(gsyms, visium=visium) {
   }
 }
 
+read_visium_data = function(data_dir) {
+  positions_path = file.path(data_dir, 'positions_list.csv')
+  barcodes_path = file.path(data_dir, 'barcodes.tsv')
+  features_path = file.path(data_dir, 'features.tsv')
+  matrix_path = file.path(data_dir, 'matrix.mtx')
+  
+  positions = read.table(positions_path, sep=',', row.names=1)
+  colnames(positions) = c('in_tissue', 'row', 'col', 'prow', 'pcol')
+  
+  barcodes = read.table(barcodes_path, sep='\t')[,1] # as vector
+  features = read.table(features_path, sep='\t')[,1] # 1st col only
+  read_cnts = read.table(matrix_path, sep=' ', col.names=c('feature', 'barcode', 'count'))
+
+  data = list(
+    spatial = positions,
+    barcodes = barcodes, 
+    features = features, 
+    counts = list()
+  )
+  
+  for (fix in 1 : (length(features))) {
+    feature = features[fix] # gene id -> gene symbol
+    data$counts[[feature]] = read_cnts[read_cnts$feature==fix,]$count # save counts for gene
+    names(data$counts[[feature]]) = read_cnts[read_cnts$feature==fix,]$barcode # rename rows as barcode ids
+    names(data$counts[[feature]]) = barcodes[as.integer(names(data$counts[[feature]]))] # rename rows as barcodes
+  }
+  
+  return(data)
+}
+
+
 
 ############
 ##  MAIN  ##
@@ -143,6 +174,9 @@ write_positions_data(test_position_data, spatial)
 visium = Visium()
 gsyms = c('A', 'B')
 write_visium_data(gsyms, visium)
+
+# Read Visium-style data
+vdata = read_visium_data(data_dir='./visium')
 
 
 # # Read positions_list.csv
