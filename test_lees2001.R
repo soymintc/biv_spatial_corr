@@ -16,7 +16,7 @@ write_positions_data = function(test_position_data, spatial=spatial) {
       if (value == 0) in_tissue = 0
       else { in_tissue = 1 }
       
-      barcode = sprintf("Ai%d_j%d", i, j) # i:y, j:x
+      barcode = sprintf("i%d_j%d", i, j) # i:y, j:x
       xcoord = 10*(i+1) # i:y
       ycoord = 10*(j+1) # j:x
       
@@ -142,7 +142,7 @@ read_visium_data = function(data_dir) {
   read_cnts = read.table(matrix_path, sep=' ', col.names=c('feature', 'barcode', 'count'))
 
   data = list(
-    spatial = positions,
+    positions = positions,
     barcodes = barcodes, 
     features = features, 
     counts = list()
@@ -156,6 +156,46 @@ read_visium_data = function(data_dir) {
   }
   
   return(data)
+}
+
+
+# Create connectivity matrix -> C
+create_connectivity_matrix = function(vdata) {
+  positions_in_tissue = vdata$positions[vdata$positions$in_tissue==1,]
+  barcodes_in_tissue = rownames(positions_in_tissue)
+  nbarcodes_in_tissue = length(barcodes_in_tissue)
+  
+  C = matrix(0, nbarcodes_in_tissue, nbarcodes_in_tissue) # C: connectivity matrix
+  rownames(C) = barcodes_in_tissue
+  colnames(C) = barcodes_in_tissue
+  
+  for (barcode in barcodes_in_tissue) {
+    conn_mat = list() # data holder for connectivity matrices
+    row_i = positions_in_tissue[barcode, 'row']
+    col_i = positions_in_tissue[barcode, 'col'] # vdata$counts[['A']][[barcode]] later
+    # Set nearby nodes and check connectivity (only in_tissue)
+    neighbors = subset(vdata$positions,
+                       in_tissue==1 &
+                         (
+                           ((row==row_i-1) & (col==col_i-1)) |
+                             ((row==row_i-1) & (col==col_i+1)) |
+                             ((row==row_i) & (col==col_i-2)) |
+                             ((row==row_i) & (col==col_i+2)) |
+                             ((row==row_i+1) & (col==col_i-1)) |
+                             ((row==row_i+1) & (col==col_i+1))
+                         ))
+    neighbor_barcodes = rownames(neighbors)
+    C[barcode, neighbor_barcodes] = 1
+  }
+  
+  W = C / rowSums(C) # W: weighted connectivity matrix
+  
+  conn_mat[['barcodes_in_tissue']] = barcodes_in_tissue
+  conn_mat[['nbarcodes_in_tissue']] = nbarcodes_in_tissue
+  conn_mat[['W']] = W
+  conn_mat[['C']] = C
+  
+  return(conn_mat)
 }
 
 
@@ -178,6 +218,32 @@ write_visium_data(gsyms, visium)
 # Read Visium-style data
 vdata = read_visium_data(data_dir='./visium')
 
+# Create connectivity matrix C(raw) and W(weighted)
+conn_mat = create_connectivity_matrix
+
+## Calculate Moran's I
+# Row-wise (xi-xbar), (xi-xbar)^2 calculation
+feature = 'B' ##@##
+X_values = vdata$counts[[feature]][conn_mat$barcodes_in_tissue]
+X = data.frame(value=X_values, mean=mean(X_values))
+X['sub_mean'] = X$value - X$mean
+X['sub_mean_sq'] = X$sub_mean^2
+
+# Row-wise xi*[x1...xn] calculation -> R
+Xsm = matrix(X$sub_mean)
+XsmtXsm = Xsm %*% t(Xsm)
+
+# Matrix-span W*R calculation
+WXsmtXsm = W * XsmtXsm
+
+# Moran's I = sum(W*R) / sum_i((xi-xbar)^2)
+moranI = sum(WXsmtXsm) / sum(X$sub_mean_sq)
+
+## Do the same thing using eq(5) from LeeS2001
+
+# Calculate L_X,Y of eq(16) from LeeS2001
+
+## Goal: calc per-gene spatial correlation
 
 # # Read positions_list.csv
 # positions_colnames = c("in_tissue", "rix", "cix", "prix", "pcix")
