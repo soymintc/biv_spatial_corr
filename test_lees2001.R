@@ -201,7 +201,6 @@ create_connectivity_matrix = function(vdata) {
 ## Calculate Moran's I
 calculate_Morans_I_brute = function(feature, vdata, conn_mat) {
   # Row-wise (xi-xbar), (xi-xbar)^2 calculation
-  feature = 'A' ##@##
   X_values = vdata$counts[[feature]][conn_mat$barcodes_in_tissue]
   X = data.frame(value=X_values)
   Xmean = mean(X$value)
@@ -238,7 +237,7 @@ calculate_Morans_I = function(feature, vdata, conn_mat) {
 }
 
 # Calculate R_X,Y of eq(16) from LeeS2001
-calculate_bivariate_correlaton = function(feature1, feature2, vdata, conn_mat) {
+calculate_r_sm = function(feature1, feature2, vdata, conn_mat) {
   # Set X, Y variables from two features
   X_values = vdata$counts[[feature1]][conn_mat$barcodes_in_tissue] # 1:X
   Y_values = vdata$counts[[feature2]][conn_mat$barcodes_in_tissue] # 2:Y
@@ -260,7 +259,7 @@ calculate_bivariate_correlaton = function(feature1, feature2, vdata, conn_mat) {
 }
 
 
-## Calculate L_X,Y of eq(16) from LeeS2001
+# Calculate L_X,Y of eq(16) from LeeS2001 - approximate; only works if feature1=feature2
 calculate_L = function(feature1, feature2, vdata, conn_mat) {
   # Set X, Y variables from two features
   X_values = vdata$counts[[feature1]][conn_mat$barcodes_in_tissue] # 1:X
@@ -283,6 +282,44 @@ calculate_L = function(feature1, feature2, vdata, conn_mat) {
   return(L_XY)
 }
 
+calculate_bsc = function(feature1, feature2, vdata, conn_mat) {
+  # Set X, Y variables from two features
+  X_values = vdata$counts[[feature1]][conn_mat$barcodes_in_tissue] # 1:X
+  Y_values = vdata$counts[[feature2]][conn_mat$barcodes_in_tissue] # 2:Y
+  X = data.frame(value=X_values)
+  Xmean = mean(X$value)
+  Y = data.frame(value=Y_values)
+  Ymean = mean(Y$value)
+  
+  # Smoothened values
+  X['smooth'] = conn_mat$W %*% X[,'value'] # Xsm = W * X
+  Y['smooth'] = conn_mat$W %*% Y[,'value'] # Ysm = W * Y
+  Xmean_sm = mean(X$smooth) # muX
+  Ymean_sm = mean(Y$smooth) # muY
+  
+  nom_X_ = X$smooth - Xmean # nominator part for X
+  nom_Y_ = Y$smooth - Ymean # nominator part for Y
+  denom_X_ = X$value - Xmean # denominator part for X
+  denom_Y_ = Y$value - Ymean # denominator part for Y
+  
+  # Calculate Peason's r(X,Y)
+  r = (sum((X$value - Xmean) * (Y$value - Ymean))
+       / (sqrt(sum((X$value - Xmean)^2)) * sqrt(sum((Y$value - Ymean)^2))))
+  r_sm = (sum((X$smooth - Xmean_sm) * (Y$smooth - Ymean_sm))
+          / (sqrt(sum((X$smooth - Xmean_sm)^2)) * sqrt(sum((Y$smooth - Ymean_sm)^2))))
+  L_XX = (sum((X$smooth - Xmean)^2) / sum((X$value - Xmean)^2))
+  L_YY = (sum((Y$smooth - Ymean)^2) / sum((Y$value - Ymean)^2))
+  L_XY = sqrt(L_XX) * sqrt(L_YY) * r_sm
+  
+  # Group into Bivariate Spatial Correlation values list
+  bsc = list('r' = r, 'r_sm' = r_sm,
+             'L_XX' = L_XX, 'L_YY' = L_YY, 'L_XY' = L_XY)
+  
+  return(bsc)
+}
+
+
+
 ############
 ##  MAIN  ##
 ############
@@ -302,21 +339,21 @@ write_visium_data(gsyms, visium)
 vdata = read_visium_data(data_dir='./visium')
 
 # Create connectivity matrix C(raw) and W(weighted)
-conn_mat = create_connectivity_matrix
+conn_mat = create_connectivity_matrix(vdata)
 
 # Calculate Moran's I using eq(5) from LeeS2001
 feature = 'A'
 moransI = calculate_Morans_I(feature, vdata, conn_mat)
 
-# Calculate r_XY(smooth) and L_XY from LeeS2001
+# Calculate statistics from LeeS (2001) Table 1
 features = c('A', 'B', 'C')
 for (feature1 in features) {
   for (feature2 in features) {
-    r_sm = calculate_correlaton(feature1, feature2, vdata, conn_mat) # r_XY(smooth)
-    L = calculate_L(feature1, feature2, vdata, conn_mat) # L_XY
+    bsc = calculate_bsc(feature1, feature2, vdata, conn_mat) # r_XY(smooth)
     
-    print_line = sprintf("[%s-%s] r:%.3f L:%.3f", 
-                         feature1, feature2, r_sm, L)
+    print_line = sprintf("[%s-%s] %.3f %.3f %.3f %.3f %.3f", 
+                         feature1, feature2, 
+                         bsc$L_XX, bsc$L_YY, bsc$r_sm, bsc$r, bsc$L_XY)
     print(print_line)
   }
 }
