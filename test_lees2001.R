@@ -42,17 +42,17 @@ Spatial = function(positions_path) {
 # Visium-style file settings
 Visium = function(out_dir="visium/") {
   visium = list() # data holder
-  visium$barcodes_path = paste(out_dir, "barcodes.tsv", sep='') # AAACAAGTATCTCCCA-1, ...
-  visium$features_path = paste(out_dir, "features.tsv", sep='') # ENSMUSG00000051951  Xkr4  Gene  Expression, ...
-  visium$matrix_path = paste(out_dir, "matrix.mtx", sep='') # as below
+  visium$barcodes_path = paste(out_dir, "barcodes.tsv.gz", sep='') # AAACAAGTATCTCCCA-1, ...
+  visium$features_path = paste(out_dir, "features.tsv.gz", sep='') # ENSMUSG00000051951  Xkr4  Gene  Expression, ...
+  visium$matrix_path = paste(out_dir, "matrix.mtx.gz", sep='') # as below
   # %%MatrixMarket matrix coordinate integer general
   # %metadata_json: {"software_version": "spaceranger-1.1.0", "format_version": 2}
   # 32285 2695 15850802 # genes barcodes valuesCnt
   # 9 1 2
   # 11 1 2
-  visium$barcodes_file = file(visium$barcodes_path, 'w')
-  visium$features_file = file(visium$features_path, 'w')
-  visium$matrix_file = file(visium$matrix_path, 'w')
+  visium$barcodes_file = gzfile(visium$barcodes_path, 'w')
+  visium$features_file = gzfile(visium$features_path, 'w')
+  visium$matrix_file = gzfile(visium$matrix_path, 'w')
   return(visium)
 }
 
@@ -126,20 +126,28 @@ write_visium_data = function(gsyms, visium=visium) {
       }
     }
   }
+  close(visium$barcodes_file)
+  close(visium$features_file)
+  close(visium$matrix_file)
 }
 
 read_visium_data = function(data_dir) {
-  positions_path = file.path(data_dir, 'positions_list.csv')
-  barcodes_path = file.path(data_dir, 'barcodes.tsv')
-  features_path = file.path(data_dir, 'features.tsv')
-  matrix_path = file.path(data_dir, 'matrix.mtx')
+  positions_path = file.path(data_dir, 'tissue_positions_list.csv')
+  barcodes_path = file.path(data_dir, 'barcodes.tsv.gz')
+  features_path = file.path(data_dir, 'features.tsv.gz')
+  matrix_path = file.path(data_dir, 'matrix.mtx.gz')
+  if (!file.exists(positions_path)) write(paste("[ERROR]", positions_path, "does not"), stderr())
+  if (!file.exists(barcodes_path)) write(paste("[ERROR]", barcodes_path, "does not"), stderr())
+  if (!file.exists(features_path)) write(paste("[ERROR]", features_path, "does not"), stderr())
+  if (!file.exists(matrix_path)) write(paste("[ERROR]", matrix_path, "does not"), stderr())
   
   positions = read.table(positions_path, sep=',', row.names=1)
   colnames(positions) = c('in_tissue', 'row', 'col', 'prow', 'pcol')
   
   barcodes = read.table(barcodes_path, sep='\t')[,1] # as vector
   features = read.table(features_path, sep='\t')[,1] # 1st col only
-  read_cnts = read.table(matrix_path, sep=' ', col.names=c('feature', 'barcode', 'count'))
+  read_cnts = read.table(matrix_path, sep=' ', skip=3,
+                         col.names=c('feature', 'barcode', 'count'))
 
   data = list(
     positions = positions,
@@ -296,12 +304,7 @@ calculate_bsc = function(feature1, feature2, vdata, conn_mat) {
   Y['smooth'] = conn_mat$W %*% Y[,'value'] # Ysm = W * Y
   Xmean_sm = mean(X$smooth) # muX
   Ymean_sm = mean(Y$smooth) # muY
-  
-  nom_X_ = X$smooth - Xmean # nominator part for X
-  nom_Y_ = Y$smooth - Ymean # nominator part for Y
-  denom_X_ = X$value - Xmean # denominator part for X
-  denom_Y_ = Y$value - Ymean # denominator part for Y
-  
+
   # Calculate Peason's r(X,Y)
   r = (sum((X$value - Xmean) * (Y$value - Ymean))
        / (sqrt(sum((X$value - Xmean)^2)) * sqrt(sum((Y$value - Ymean)^2))))
@@ -324,36 +327,38 @@ calculate_bsc = function(feature1, feature2, vdata, conn_mat) {
 ##  MAIN  ##
 ############
 
-# Read test data fig1 graph A/B/C 
-setwd('~/BSC')
-test_position_data = GeneTestData('A')
-
-spatial = Spatial("visium/positions_list.csv")
-write_positions_data(test_position_data, spatial)
-
-visium = Visium()
-gsyms = c('A', 'B', 'C')
-write_visium_data(gsyms, visium)
-
-# Read Visium-style data
-vdata = read_visium_data(data_dir='./visium')
-
-# Create connectivity matrix C(raw) and W(weighted)
-conn_mat = create_connectivity_matrix(vdata)
-
-# Calculate Moran's I using eq(5) from LeeS2001
-feature = 'A'
-moransI = calculate_Morans_I(feature, vdata, conn_mat)
-
-# Calculate statistics from LeeS (2001) Table 1
-features = c('A', 'B', 'C')
-for (feature1 in features) {
-  for (feature2 in features) {
-    bsc = calculate_bsc(feature1, feature2, vdata, conn_mat) # r_XY(smooth)
-    
-    print_line = sprintf("[%s-%s] %.3f %.3f %.3f %.3f %.3f", 
-                         feature1, feature2, 
-                         bsc$L_XX, bsc$L_YY, bsc$r_sm, bsc$r, bsc$L_XY)
-    print(print_line)
+if (!interactive()) { # don't run if sourced
+  # Read test data fig1 graph A/B/C 
+  setwd('~/BSC')
+  test_position_data = GeneTestData('A')
+  
+  spatial = Spatial("visium/positions_list.csv")
+  write_positions_data(test_position_data, spatial)
+  
+  visium = Visium()
+  gsyms = c('A', 'B', 'C')
+  write_visium_data(gsyms, visium)
+  
+  # Read Visium-style data
+  vdata = read_visium_data(data_dir='./visium')
+  
+  # Create connectivity matrix C(raw) and W(weighted)
+  conn_mat = create_connectivity_matrix(vdata)
+  
+  # Calculate Moran's I using eq(5) from LeeS2001
+  feature = 'A'
+  moransI = calculate_Morans_I(feature, vdata, conn_mat)
+  
+  # Calculate statistics from LeeS (2001) Table 1
+  features = c('A', 'B', 'C')
+  for (feature1 in features) {
+    for (feature2 in features) {
+      bsc = calculate_bsc(feature1, feature2, vdata, conn_mat) # r_XY(smooth)
+      
+      print_line = sprintf("[%s-%s] %.3f %.3f %.3f %.3f %.3f", 
+                           feature1, feature2, 
+                           bsc$L_XX, bsc$L_YY, bsc$r_sm, bsc$r, bsc$L_XY)
+      print(print_line)
+    }
   }
 }
