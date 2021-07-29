@@ -198,7 +198,27 @@ create_connectivity_matrix = function(vdata) {
   return(conn_mat)
 }
 
-
+## Calculate Moran's I
+calculate_Morans_I_brute = function(feature, vdata, conn_mat) {
+  # Row-wise (xi-xbar), (xi-xbar)^2 calculation
+  feature = 'A' ##@##
+  X_values = vdata$counts[[feature]][conn_mat$barcodes_in_tissue]
+  X = data.frame(value=X_values)
+  Xmean = mean(X$value)
+  X['sub_mean'] = X$value - Xmean
+  X['sub_mean_sq'] = X$sub_mean^2
+  
+  # Row-wise xi*[x1...xn] calculation -> R
+  Xmm = matrix(X$sub_mean) # X minus mean
+  XmmtXmm = Xmm %*% t(Xmm) # 
+  
+  # Matrix-span W*R calculation
+  WXmmtXmm = W * XmmtXmm
+  
+  # Moran's I = sum(W*R) / sum_i((xi-xbar)^2)
+  moransI = sum(WXmmtXmm) / sum(X$sub_mean_sq)
+  return(moransI)
+}
 
 ############
 ##  MAIN  ##
@@ -221,27 +241,35 @@ vdata = read_visium_data(data_dir='./visium')
 # Create connectivity matrix C(raw) and W(weighted)
 conn_mat = create_connectivity_matrix
 
-## Calculate Moran's I
+# Calculate Moran's I using eq(5) from LeeS2001
+# Simplify using: Xsm_i (smooth) = sum_j(w_ij * X_j)
 # Row-wise (xi-xbar), (xi-xbar)^2 calculation
-feature = 'B' ##@##
+feature = 'A' ##@##
 X_values = vdata$counts[[feature]][conn_mat$barcodes_in_tissue]
-X = data.frame(value=X_values, mean=mean(X_values))
-X['sub_mean'] = X$value - X$mean
+X = data.frame(value=X_values)
+Xmean = mean(X$value)
+X['sub_mean'] = X$value - Xmean
 X['sub_mean_sq'] = X$sub_mean^2
 
-# Row-wise xi*[x1...xn] calculation -> R
-Xsm = matrix(X$sub_mean)
-XsmtXsm = Xsm %*% t(Xsm)
+X['smooth'] = conn_mat$W %*% X[,'value'] # Xsm = W * X
+X['nom_'] = (X$value - Xmean) * (X$smooth - Xmean) # nominator
+X['denom_'] = X$sub_mean_sq # denominator; (X$value - Xmean)^2
+moransI = sum(X$nom_) / sum(X$denom_)
 
-# Matrix-span W*R calculation
-WXsmtXsm = W * XsmtXsm
 
-# Moran's I = sum(W*R) / sum_i((xi-xbar)^2)
-moranI = sum(WXsmtXsm) / sum(X$sub_mean_sq)
+## Calculate R_X,Y, L_X,Y of eq(16) from LeeS2001
+# Set X, Y variables from two features
+feature1 = 'A' ##@##
+feature2 = 'A' ##@##
+X_values = vdata$counts[[feature1]][conn_mat$barcodes_in_tissue] # 1:X
+Y_values = vdata$counts[[feature2]][conn_mat$barcodes_in_tissue] # 2:Y
+X = data.frame(value=X_values)
+Xmean = mean(X$value)
+Y = data.frame(value=Y_values)
+Ymean = mean(Y$value)
 
-## Do the same thing using eq(5) from LeeS2001
+# Calculate R_X,Y
 
-# Calculate L_X,Y of eq(16) from LeeS2001
 
 ## Goal: calc per-gene spatial correlation
 
