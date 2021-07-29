@@ -252,9 +252,9 @@ X['sub_mean'] = X$value - Xmean
 X['sub_mean_sq'] = X$sub_mean^2
 
 X['smooth'] = conn_mat$W %*% X[,'value'] # Xsm = W * X
-X['nom_'] = (X$value - Xmean) * (X$smooth - Xmean) # nominator
-X['denom_'] = X$sub_mean_sq # denominator; (X$value - Xmean)^2
-moransI = sum(X$nom_) / sum(X$denom_)
+nom_ = (X$value - Xmean) * (X$smooth - Xmean) # nominator
+denom_ = X$sub_mean_sq # denominator; (X$value - Xmean)^2
+moransI = sum(nom_) / sum(denom_)
 
 
 ## Calculate R_X,Y, L_X,Y of eq(16) from LeeS2001
@@ -268,14 +268,23 @@ Xmean = mean(X$value)
 Y = data.frame(value=Y_values)
 Ymean = mean(Y$value)
 
-# Calculate R_X,Y
+# Calculate R_X,Y - connectivity matrix shared between X and Y
+X['smooth'] = conn_mat$W %*% X[,'value'] # Xsm = W * X
+Y['smooth'] = conn_mat$W %*% Y[,'value'] # Ysm = W * Y
+Xmean_sm = mean(X$smooth) # muX
+Ymean_sm = mean(Y$smooth) # muY
+nom_XY_ = (X$smooth - Xmean_sm) * (Y$smooth - Ymean_sm) # nominator
+denom_X_ = X$smooth - Xmean_sm # denominator part for X
+denom_Y_ = Y$smooth - Ymean_sm # denominator part for Y
+r_sm = sum(nom_XY_) / sum(sqrt(sum(denom_X_^2)) * sqrt(sum(denom_Y_^2))) # eq(15)
 
-
-## Goal: calc per-gene spatial correlation
-
-# # Read positions_list.csv
-# positions_colnames = c("in_tissue", "rix", "cix", "prix", "pcix")
-# con_graph = read.csv(positions_path, header=F, row.names=1)
-# colnames(con_graph) = positions_colnames
-# con_graph = subset(con_graph, in_tissue == 1)
-
+#Calculate L_X,Y: per-gene spatial correlation
+X['smooth'] = conn_mat$W %*% X[,'value'] # Xsm = W * X
+Y['smooth'] = conn_mat$W %*% Y[,'value'] # Ysm = W * Y
+Xmean_sm = mean(X$smooth) # muX
+Ymean_sm = mean(Y$smooth) # muY
+nom_X_ = X$smooth - Xmean # nominator part for X
+nom_Y_ = Y$smooth - Ymean # nominator part for Y
+denom_X_ = X$value - Xmean # denominator part for X
+denom_Y_ = Y$value - Ymean # denominator part for Y
+L_XY = sqrt(sum(nom_X_^2)/sum(denom_X_^2)) * sqrt(sum(nom_Y_^2)/sum(denom_Y_^2))
