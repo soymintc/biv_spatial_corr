@@ -39,6 +39,9 @@ create_connectivity_matrix = function(sdata) { # input Seurat spatial data
   W = C / rowSums(C) # W: weighted connectivity matrix
   W[is.na(W)] = 0
   
+  conn_mat[['L_estimate_divR']] = (sum(diag(t(W %*% W))) 
+                                   / (nbarcodes_in_tissue - 1))
+  
   conn_mat[['barcodes_in_tissue']] = barcodes_in_tissue
   conn_mat[['nbarcodes_in_tissue']] = nbarcodes_in_tissue
   conn_mat[['W']] = W
